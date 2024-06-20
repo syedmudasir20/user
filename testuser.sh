@@ -1,45 +1,52 @@
 #!/bin/bash
 
-# Ensure the script is run as root
+# Variables
+USERNAME="testuser"
+HOMEDIR="/testuser"
+PASSWORD="linux"
+
+# Check if the script is run as root
 if [[ $EUID -ne 0 ]]; then
-   echo "This script must be run as root"
+   echo "This script must be run as root" 
    exit 1
 fi
 
-# Variables
-USERNAME="testuser"
-MOUNT_POINT="/testuser"
-
-# Create the user if they do not exist
-if ! id -u $USERNAME >/dev/null 2>&1; then
-    useradd -m -s /bin/bash $USERNAME
-    echo "User $USERNAME created."
-else
-    echo "User $USERNAME already exists."
-fi
-
-# Set password for the user
-echo "Set password for $USERNAME:"
-passwd $USERNAME
-
-# Create the mount point if it does not exist
-if [ ! -d "$MOUNT_POINT" ]; then
-    mkdir -p $MOUNT_POINT
-    chown $USERNAME:$USERNAME $MOUNT_POINT
-    echo "Directory $MOUNT_POINT created and ownership set to $USERNAME."
-else
-    echo "Directory $MOUNT_POINT already exists."
-fi
-
-# Add the user to the wheel group
-usermod -aG wheel $USERNAME
-
-# Verify the user is in the wheel group
-if groups $USERNAME | grep &>/dev/null "\bwheel\b"; then
-    echo "User $USERNAME added to wheel group."
-else
-    echo "Failed to add $USERNAME to wheel group."
+# Create the user with the specified home directory
+useradd -m -d "$HOMEDIR" "$USERNAME"
+if [[ $? -ne 0 ]]; then
+    echo "Failed to create user $USERNAME"
     exit 1
 fi
 
-echo "Setup complete. User $USERNAME has a directory at $MOUNT_POINT and is a member of the wheel group."
+# Set the user's password
+echo "$USERNAME:$PASSWORD" | chpasswd
+if [[ $? -ne 0 ]]; then
+    echo "Failed to set password for $USERNAME"
+    exit 1
+fi
+
+# Add the user to the sudoers file
+echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" | sudo tee -a /etc/sudoers.d/$USERNAME
+if [[ $? -ne 0 ]]; then
+    echo "Failed to add $USERNAME to the sudoers file"
+    exit 1
+fi
+
+# Verify the user creation
+getent passwd "$USERNAME"
+if [[ $? -ne 0 ]]; then
+    echo "User $USERNAME does not exist"
+    exit 1
+else
+    echo "User $USERNAME created successfully with home directory $HOMEDIR"
+fi
+
+# Verify the home directory
+if [[ -d "$HOMEDIR" ]]; then
+    echo "Home directory $HOMEDIR created successfully"
+else
+    echo "Home directory $HOMEDIR was not created"
+    exit 1
+fi
+
+echo "User $USERNAME has been added to the sudoers file with no password requirement for sudo commands."
